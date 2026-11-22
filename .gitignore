@@ -1,0 +1,19 @@
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment variables and secrets
+.env
+
+# Runtime logs
+logs/
+*.log
+
+# Frontend dependencies
+node_modules/
+
+# Build files
+dist/
