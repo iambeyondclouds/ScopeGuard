@@ -7,6 +7,7 @@ from backend.monitor.runtime_monitor import RuntimeMonitor
 from backend.policy.policy_engine import PolicyEngine
 from backend.execution.executor import ControlledExecutor
 from backend.incidents.incident_reporter import IncidentReporter
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import (
     init_db,
@@ -18,6 +19,16 @@ from backend.database import (
 
 
 app = FastAPI(title="ScopeGuard API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 monitor = RuntimeMonitor()
 engine = PolicyEngine()
