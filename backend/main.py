@@ -8,6 +8,14 @@ from backend.policy.policy_engine import PolicyEngine
 from backend.execution.executor import ControlledExecutor
 from backend.incidents.incident_reporter import IncidentReporter
 
+from backend.database import (
+    init_db,
+    save_event,
+    save_incident,
+    get_events as get_saved_events,
+    get_incidents as get_saved_incidents
+)
+
 
 app = FastAPI(title="ScopeGuard API")
 
@@ -29,6 +37,11 @@ class ActionRequest(BaseModel):
     content: str | None = None
 
 
+@app.on_event("startup")
+def startup():
+    init_db()
+
+
 @app.get("/")
 def home():
     return {"message": "ScopeGuard API is running"}
@@ -41,11 +54,15 @@ def create_task(request: TaskRequest):
     policy = analyze_task(request.task)
     executor = ControlledExecutor(policy, monitor, engine)
 
-    return {"message": "Task registered", "policy": policy}
+    return {
+        "message": "Task registered",
+        "policy": policy
+    }
 
 
 @app.post("/execute")
 def execute_action(request: ActionRequest):
+
     if executor is None:
         return {"error": "Submit a task first"}
 
@@ -57,21 +74,28 @@ def execute_action(request: ActionRequest):
 
     event = monitor.get_events()[-1]
 
-    reporter.report_incident(
+    # Save every activity event
+    save_event(event)
+
+    # Generate and save an incident if an action was blocked
+    incident = reporter.report_incident(
         policy["task"],
         event,
         result
     )
+
+    if incident is not None:
+        save_incident(incident)
 
     return result
 
 
 @app.get("/events")
 def get_events():
-    return monitor.get_events()
+    return get_saved_events()
 
 
 @app.get("/incidents")
 def get_incidents():
-    return reporter.get_incidents()
+    return get_saved_incidents()
 
