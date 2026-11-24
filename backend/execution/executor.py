@@ -1,5 +1,9 @@
 
 from pathlib import Path
+import subprocess
+import sys
+
+from backend.monitor.process_bridge import get_process_info
 
 
 class ControlledExecutor:
@@ -14,10 +18,8 @@ class ControlledExecutor:
 
     def execute(self, action, target, content=None):
 
-        # Record the attempted activity
         event = self.monitor.record_activity(action, target)
 
-        # Check the security policy
         result = self.policy_engine.check_activity(
             self.policy, event
         )
@@ -26,7 +28,65 @@ class ControlledExecutor:
             event["status"] = "blocked"
             return result
 
-        # Only file operations are supported
+        # Run only the approved test command
+        if action == "run_command":
+
+            if target != "pytest":
+                event["status"] = "blocked"
+                return {
+                    "decision": "BLOCKED",
+                    "reason": "Command is not permitted."
+                }
+
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "pytest", "-q"],
+                    cwd=self.workspace,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+
+                # Collect process details using C++
+                process_info = get_process_info(process.pid)
+                event["process"] = process_info
+
+                output, error = process.communicate(timeout=20)
+
+                if process.returncode == 0:
+                    event["status"] = "allowed"
+                    decision = "ALLOWED"
+                else:
+                    event["status"] = "error"
+                    decision = "ERROR"
+
+                return {
+                    "decision": decision,
+                    "reason": "Test execution finished.",
+                    "output": output,
+                    "error": error,
+                    "process": process_info
+                }
+
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+                event["status"] = "error"
+
+                return {
+                    "decision": "ERROR",
+                    "reason": "Test execution timed out."
+                }
+
+            except OSError as error:
+                event["status"] = "error"
+
+                return {
+                    "decision": "ERROR",
+                    "reason": str(error)
+                }
+
+        # Support file operations
         if action not in ["read_file", "write_file"]:
             event["status"] = "blocked"
             return {
@@ -34,7 +94,6 @@ class ControlledExecutor:
                 "reason": "Unsupported operation."
             }
 
-        # Validate the file path
         file_path = (self.workspace / target).resolve()
 
         if not file_path.is_relative_to(self.workspace.resolve()):
@@ -47,7 +106,6 @@ class ControlledExecutor:
         try:
             if action == "read_file":
                 file_content = file_path.read_text()
-
                 event["status"] = "allowed"
 
                 return {
@@ -71,7 +129,6 @@ class ControlledExecutor:
                     }
 
                 file_path.write_text(content)
-
                 event["status"] = "allowed"
 
                 return {
